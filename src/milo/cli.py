@@ -18,8 +18,10 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from . import __version__
 from .agent import Agent
@@ -33,8 +35,52 @@ from .security import redact_secrets
 from .sessions import SessionStore
 from .skills import SkillError, SkillInstaller, load_catalog
 from .storage import resolve_milo_home
+from .tools import builtin_tool_specs
 
 console = Console()
+
+_MILO_BANNER = """[bold cyan]
+███╗   ███╗██╗██╗      ██████╗
+████╗ ████║██║██║     ██╔═══██╗
+██╔████╔██║██║██║     ██║   ██║
+██║╚██╔╝██║██║██║     ██║   ██║
+██║ ╚═╝ ██║██║███████╗╚██████╔╝
+╚═╝     ╚═╝╚═╝╚══════╝ ╚═════╝[/]"""
+
+
+def _startup_panel(config: Config, cwd: Path) -> Panel:
+    """Build Milo's full provider-native startup surface."""
+    tool_modules = sorted({spec.module for spec in builtin_tool_specs()})
+    manifests = load_catalog(_catalog(), milo_version=__version__)
+    skill_names = [manifest.name for manifest in manifests]
+    model = config.model or "provider default"
+    left = (
+        _MILO_BANNER
+        + f"\n\n[bold]{escape(model)}[/] · {escape(config.provider)}"
+        + f"\n[dim]{escape(str(cwd))}[/]"
+        + "\n[dim]Provider-owned authentication · low effort[/]"
+    )
+    right = (
+        "[bold]Available Tools[/]\n"
+        + ", ".join(escape(module) for module in tool_modules)
+        + f"\n[dim]{len(builtin_tool_specs())} tools · permission scoped[/]"
+        + "\n\n[bold]Available Skills[/]\n"
+        + ", ".join(escape(name) for name in skill_names[:8])
+        + (f", +{len(skill_names) - 8} more" if len(skill_names) > 8 else "")
+        + f"\n[dim]{len(skill_names)} validated catalog skills[/]"
+        + "\n\n[bold]Session Commands[/]\n"
+        + "/help · /new · /retry · /clear · /status · /sessions · /skills · /memory · /doctor · /exit"
+    )
+    layout = Table.grid(expand=True, padding=(0, 2))
+    layout.add_column(ratio=2)
+    layout.add_column(ratio=3)
+    layout.add_row(left, right)
+    return Panel(
+        layout,
+        title=f"[bold]Milo {__version__} · provider-native agent[/]",
+        border_style="cyan",
+        padding=(1, 2),
+    )
 
 
 def _home() -> Path:
@@ -206,10 +252,10 @@ def chat(args: argparse.Namespace) -> int:
 
         def show_stream(text: str) -> None:
             streamed.append(text)
-            console.print(text, end="")
+            console.print(text, end="", markup=False)
 
         def show_delegation(decision: Any) -> None:
-            console.print(f"[dim]Sub-agents: {', '.join(decision.roles)}[/]")
+            console.print(Text(f"Sub-agents: {', '.join(decision.roles)}", style="dim"))
 
         result = Agent(
             config,
@@ -219,13 +265,15 @@ def chat(args: argparse.Namespace) -> int:
             on_delegation=show_delegation,
         ).run(task, resume=args.resume, delegate=False if args.no_delegate else None)
     except Exception as exc:
-        console.print(f"[red]Milo could not complete the task:[/] {exc}")
+        console.print(Text("Milo could not complete the task:", style="red"), Text(str(exc)))
         return 1
     if streamed:
         console.print()
     else:
-        console.print(result.text)
-    console.print(f"[dim]Session: {result.session_id}[/]")
+        console.print(result.text, markup=False)
+    args.resume = result.session_id
+    if getattr(args, "show_session", True):
+        console.print(Text(f"Session: {result.session_id}", style="dim"))
     return 0
 
 
@@ -376,9 +424,9 @@ def interactive() -> int:
         )
         if code:
             return code
-    console.print(
-        Panel.fit("[bold cyan]Milo[/] — provider-native agent\nType /help, /exit, or a task.")
-    )
+    config = _config_store().load()
+    console.print(_startup_panel(config, Path.cwd().resolve()))
+    console.print("[bold]Welcome to Milo.[/] Type a task or /help for commands.\n")
     history_path = _home() / "history"
     history_path.touch(mode=0o600, exist_ok=True)
     os.chmod(history_path, 0o600)
@@ -388,13 +436,37 @@ def interactive() -> int:
     def submit_multiline(event: Any) -> None:
         event.current_buffer.validate_and_handle()
 
+    commands = [
+        "/help",
+        "/new",
+        "/retry",
+        "/clear",
+        "/status",
+        "/sessions",
+        "/skills",
+        "/memory",
+        "/doctor",
+        "/exit",
+        "/quit",
+    ]
+    active_session: str | None = None
+    last_prompt: str | None = None
+
+    def toolbar() -> str:
+        model = config.model or "default"
+        state = "active session" if active_session else "new session"
+        return (
+            f" {config.provider} · {model} │ {state} │ "
+            "Enter: newline · Esc+Enter: submit · Ctrl+C: cancel "
+        )
+
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(history_path)),
         auto_suggest=AutoSuggestFromHistory(),
-        completer=WordCompleter(["/help", "/exit", "/quit"], sentence=True),
+        completer=WordCompleter(commands, sentence=True),
         multiline=True,
         key_bindings=bindings,
-        bottom_toolbar="Enter: newline · Esc+Enter: submit · Ctrl+C: cancel",
+        bottom_toolbar=toolbar,
     )
     while True:
         try:
@@ -405,14 +477,67 @@ def interactive() -> int:
         if prompt in {"/exit", "/quit"}:
             return 0
         if prompt == "/help":
-            console.print("/help /exit — or enter any task. Complex tasks delegate automatically.")
-            continue
-        if prompt:
-            chat(
-                argparse.Namespace(
-                    prompt=[prompt], provider=None, model=None, resume=None, no_delegate=False
+            console.print(
+                Panel.fit(
+                    "[bold]Session[/]  /new /retry /clear /status /sessions\n"
+                    "[bold]Knowledge[/] /skills /memory\n"
+                    "[bold]System[/]   /doctor /help /exit\n\n"
+                    "Complex tasks delegate automatically; provider sessions continue natively.",
+                    title="Milo commands",
+                    border_style="cyan",
                 )
             )
+            continue
+        if prompt == "/new":
+            active_session = None
+            last_prompt = None
+            console.print("[cyan]Started a new Milo session.[/]")
+            continue
+        if prompt == "/clear":
+            active_session = None
+            last_prompt = None
+            console.clear()
+            console.print(_startup_panel(config, Path.cwd().resolve()))
+            continue
+        if prompt == "/status":
+            console.print(
+                f"[bold]Provider:[/] {escape(config.provider)}  "
+                f"[bold]Model:[/] {escape(config.model or 'default')}  "
+                f"[bold]Session:[/] {'active' if active_session else 'new'}  "
+                f"[bold]Project:[/] {escape(str(Path.cwd().resolve()))}"
+            )
+            continue
+        if prompt == "/sessions":
+            sessions_command(argparse.Namespace(sessions_action="list", id=None, query=None))
+            continue
+        if prompt == "/skills":
+            skills_command(argparse.Namespace(skill_action="list", name=None))
+            continue
+        if prompt == "/memory":
+            memory_command(
+                argparse.Namespace(memory_action="list", content=None, query=None, id=None)
+            )
+            continue
+        if prompt == "/doctor":
+            doctor(argparse.Namespace())
+            continue
+        if prompt == "/retry":
+            if not last_prompt:
+                console.print("[yellow]Nothing to retry in this session.[/]")
+                continue
+            prompt = last_prompt
+        if prompt:
+            chat_args = argparse.Namespace(
+                prompt=[prompt],
+                provider=None,
+                model=None,
+                resume=active_session,
+                no_delegate=False,
+                show_session=False,
+            )
+            if chat(chat_args) == 0:
+                active_session = chat_args.resume
+                last_prompt = prompt
 
 
 def build_parser() -> argparse.ArgumentParser:

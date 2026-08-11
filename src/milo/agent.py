@@ -107,6 +107,9 @@ class Agent:
 
     def _augmented_prompt(self, task: str) -> str:
         """Add bounded, project-local evidence without treating workspace text as instructions."""
+        byte_budget = self.config.context_budget
+        if len(task.encode("utf-8")) > byte_budget:
+            raise InvocationError("task exceeds the configured context budget")
         terms = [term.casefold() for term in re.findall(r"[A-Za-z0-9_-]{3,}", task)]
         sections: list[str] = []
 
@@ -145,11 +148,18 @@ class Agent:
                 pass
         if not sections:
             return task
-        return task + "\n\n<MILO_CONTEXT>\n" + "\n\n".join(sections) + "\n</MILO_CONTEXT>"
+        prefix = task + "\n\n<MILO_CONTEXT>\n"
+        suffix = "\n</MILO_CONTEXT>"
+        available = byte_budget - len(prefix.encode("utf-8")) - len(suffix.encode("utf-8"))
+        if available <= 0:
+            return task
+        context = "\n\n".join(sections).encode("utf-8")[:available].decode("utf-8", errors="ignore")
+        return prefix + context + suffix
 
     def _invoke(
         self, prompt: str, *, provider_session_id: str | None = None, emit: bool = True
     ) -> tuple[str, str | None]:
+        augmented = self._augmented_prompt(prompt)
         provider = self.provider_factory(self.config.provider)
         if not provider.detect():
             raise InvocationError(
@@ -159,7 +169,6 @@ class Agent:
         deltas: list[str] = []
         fallback: list[str] = []
         remote_id = provider_session_id
-        augmented = self._augmented_prompt(prompt)
         for event in provider.stream(
             augmented, model=self.config.model, session_id=provider_session_id
         ):

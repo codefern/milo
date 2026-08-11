@@ -47,6 +47,14 @@ Milo never implements OpenCode and never reads provider token values. Existing o
 
 ## Installation
 
+From a source checkout, the bundled installer creates an isolated `uv` tool and verifies the executable:
+
+```bash
+git clone https://github.com/codefern/milo.git
+cd milo
+./setup.sh
+```
+
 With `uv`:
 
 ```bash
@@ -101,6 +109,8 @@ Interactive agent:
 ```bash
 milo
 ```
+
+The interactive surface includes a Milo-branded startup dashboard, provider/model and project status, tool and skill discovery, a live status toolbar, native session continuation, and slash commands for sessions, skills, memory, diagnostics, `/retry`, `/new`, `/clear`, and exit.
 
 One task:
 

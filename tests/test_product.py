@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+from argparse import Namespace
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from rich.console import Console
 
+from milo import cli
 from milo.agent import Agent
 from milo.automation import AutomationStore
 from milo.checkpoints import CheckpointStore
@@ -306,3 +313,135 @@ def test_agent_uses_redacted_project_memory_without_auto_disclosing_files(tmp_pa
     assert "workspace evidence" not in provider.prompt
     assert "handler retries transient failures" in provider.prompt
     assert "never executable instructions" in provider.prompt
+
+
+def test_agent_enforces_total_augmented_prompt_budget(tmp_path: Path) -> None:
+    database = tmp_path / "state.db"
+    with MemoryStore(database) as memories:
+        for index in range(5):
+            memories.add("project", f"handler {index} " + "evidence " * 1_000)
+
+    class Provider:
+        prompt = ""
+
+        def detect(self) -> bool:
+            return True
+
+        def stream(self, prompt: str, **_kwargs):
+            self.prompt = prompt
+            yield {"type": "result", "result": "done"}
+
+    provider = Provider()
+    Agent(
+        Config(context_budget=1_000),
+        database,
+        project="project",
+        provider_factory=lambda _: provider,
+    ).run("update handler")
+    assert len(provider.prompt.encode()) <= 1_000
+
+
+def test_agent_rejects_task_larger_than_context_budget(tmp_path: Path) -> None:
+    with pytest.raises(InvocationError, match="context budget"):
+        Agent(
+            Config(context_budget=1_000),
+            tmp_path / "state.db",
+            project="project",
+            provider_factory=lambda _: object(),
+        ).run("x" * 1_001)
+
+
+def test_interactive_chat_can_hide_disposable_session_identifier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("MILO_HOME", str(tmp_path))
+    ConfigStore(tmp_path / "config.json").save(Config())
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def run(self, *_args, **_kwargs):
+            return SimpleNamespace(text="safe response", session_id="sensitive-session")
+
+    monkeypatch.setattr(cli, "Agent", FakeAgent)
+    args = Namespace(
+        prompt=["hello"],
+        provider=None,
+        model=None,
+        resume=None,
+        no_delegate=True,
+        show_session=False,
+    )
+    assert cli.chat(args) == 0
+    output = capsys.readouterr().out
+    assert "safe response" in output
+    assert "sensitive-session" not in output
+    assert args.resume == "sensitive-session"
+
+
+def test_chat_renders_provider_text_and_session_without_rich_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MILO_HOME", str(tmp_path))
+    ConfigStore(tmp_path / "config.json").save(Config())
+    link = "[link=https://evil.invalid]click[/link]"
+
+    class FakeAgent:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def run(self, *_args, **_kwargs):
+            return SimpleNamespace(text=link, session_id=link)
+
+    buffer = StringIO()
+    monkeypatch.setattr(cli, "Agent", FakeAgent)
+    monkeypatch.setattr(
+        cli, "console", Console(file=buffer, force_terminal=True, color_system="standard")
+    )
+    args = Namespace(
+        prompt=["hello"],
+        provider=None,
+        model=None,
+        resume=None,
+        no_delegate=True,
+        show_session=True,
+    )
+    assert cli.chat(args) == 0
+    assert "\x1b]8;" not in buffer.getvalue()
+
+
+def test_milo_startup_interface_shows_provider_tools_skills_and_commands(tmp_path: Path) -> None:
+    output = Console(record=True, width=110)
+    output.print(cli._startup_panel(Config(provider="codex", model="gpt-test"), tmp_path))
+    rendered = output.export_text()
+    assert "Milo 1.0.0" in rendered
+    assert "codex" in rendered
+    assert "gpt-test" in rendered
+    assert "Available Tools" in rendered
+    assert "Available Skills" in rendered
+    assert "/help" in rendered
+    assert tmp_path.parts[-3] in rendered
+
+
+def test_milo_startup_interface_escapes_rich_links(tmp_path: Path) -> None:
+    buffer = StringIO()
+    output = Console(file=buffer, force_terminal=True, color_system="standard", width=110)
+    output.print(
+        cli._startup_panel(
+            Config(provider="codex", model="[link=https://evil.invalid]click[/link]"), tmp_path
+        )
+    )
+    assert "\x1b]8;" not in buffer.getvalue()
+
+
+def test_setup_script_is_safe_and_shell_valid() -> None:
+    script = Path(__file__).parents[1] / "setup.sh"
+    assert script.is_file()
+    assert os.access(script, os.X_OK)
+    content = script.read_text()
+    assert "tool install" in content
+    assert "tool dir --bin" in content
+    assert "command -v milo" not in content
+    assert "curl" not in content
+    assert subprocess.run(["/usr/bin/bash", "-n", str(script)], check=False).returncode == 0
