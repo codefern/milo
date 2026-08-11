@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "55911341956ebade13b89ec77beb0bcfd657bf0eb43ca4f39a7d9a3b6ed44ce4"
+  },
+  "name": "mcp-integration",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

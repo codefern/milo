@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "9bc7e6365c32e2fe819a7590cfcfe190772c81a843c29dda8a4e3833316b72af"
+  },
+  "name": "data-analysis",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

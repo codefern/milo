@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "86816fe51e83f195a95ecc272e0f591a6c013e0874d52a0b67d3436a08cc028b"
+  },
+  "name": "security-review",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

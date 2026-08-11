@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "bfdf82d155835de5d9db40348b10e1a284371b3381c6f2db9309bcad744f6dd3"
+  },
+  "name": "python",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

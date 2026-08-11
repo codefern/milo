@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "milo-agent"
+version = "1.0.0"
+description = "A provider-native, security-first AI agent harness"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "codefern"}]
+dependencies = [
+  "rich>=13.9,<15",
+  "prompt-toolkit>=3.0.48,<4",
+]
+keywords = ["ai", "agent", "codex", "claude-code", "gemini-cli", "cli"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/codefern/milo"
+Repository = "https://github.com/codefern/milo"
+Issues = "https://github.com/codefern/milo/issues"
+
+[project.scripts]
+milo = "milo.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+  "mypy>=1.14,<2",
+  "build>=1.2,<2",
+  "pip-audit>=2.8,<3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/milo"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+ignore = ["E501", "S101", "S105", "S108", "S310", "S603"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["milo"]

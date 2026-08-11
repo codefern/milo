@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "4416b7ffef498cf469903574a6f53421031c0b2317b372b6f60d685a84a3ec1f"
+  },
+  "name": "browser-qa",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "07abe221209e92f475d75ca442255a78da25b392893a27b249dd965da9bef523"
+  },
+  "name": "project-bootstrap",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

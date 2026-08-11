@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "398af06f743b59243000b05e25540a06d9079ea57f4aaf3a3e031c2cdfd52a65"
+  },
+  "name": "systematic-debugging",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

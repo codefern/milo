@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "a86de4efdc952acfdd0d5ad6944d3e9eac0e5acfd4912153176c0635360c1e4b"
+  },
+  "name": "git-workflow",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

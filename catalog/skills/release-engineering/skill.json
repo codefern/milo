@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "25a2c1733234f6c69d601fb59f045e736fbdc9e3c913c72287432804d16eb198"
+  },
+  "name": "release-engineering",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

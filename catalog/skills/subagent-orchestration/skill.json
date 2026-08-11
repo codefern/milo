@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "a06d8aa28b02d0206802684da9af944e0ed0583d3ce21a90610bc4106b74e107"
+  },
+  "name": "subagent-orchestration",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

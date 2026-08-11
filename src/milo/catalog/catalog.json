@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "skills": [
+    {
+      "name": "systematic-debugging",
+      "description": "Root-cause debugging with reproducible tests",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "test-driven-development",
+      "description": "Red-green-refactor development workflow",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "code-review",
+      "description": "Correctness, security, and maintainability review",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "git"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "git-workflow",
+      "description": "Safe branching, commits, diffs, and recovery",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "git"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "github-workflow",
+      "description": "Issues, pull requests, releases, and CI with gh",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "gh"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "web-research",
+      "description": "Multi-source research with traceable citations",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "security-review",
+      "description": "Threat modeling and practical security audits",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "python",
+      "description": "Modern Python implementation and packaging",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "python>=3.11"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "javascript-typescript",
+      "description": "Node.js, JavaScript, and TypeScript workflows",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "node"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "docs",
+      "description": "Accurate product and API documentation",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "shell-safety",
+      "description": "Portable shell operations without injection",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "project-bootstrap",
+      "description": "Create clean maintainable project foundations",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "performance",
+      "description": "Profiling and resource-conscious optimization",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "release-engineering",
+      "description": "Build, validate, publish, and verify releases",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "git"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "subagent-orchestration",
+      "description": "Dynamic decomposition and result reconciliation",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": true
+    },
+    {
+      "name": "mcp-integration",
+      "description": "Secure Model Context Protocol integration",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": false
+    },
+    {
+      "name": "browser-qa",
+      "description": "Browser-driven product testing with evidence",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "browser"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": false
+    },
+    {
+      "name": "data-analysis",
+      "description": "Reliable small-data analysis and reporting",
+      "version": "1.0.0",
+      "source": "builtin",
+      "requirements": [
+        "python>=3.11"
+      ],
+      "compatibility": ">=1.0.0,<2.0.0",
+      "install": {
+        "method": "copy",
+        "commands": []
+      },
+      "recommended": false
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "6b634cbd6a18ccf05d46cdb6088738824d798a93f7673b94c54cf0f7afb490f1"
+  },
+  "name": "test-driven-development",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "7157e88505410dbdd0f0a8e03968bcc2b023d6d416c924dbcf8f3db783bfd03c"
+  },
+  "name": "docs",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

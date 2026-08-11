@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "963c0c90d0e163760af355030f5b9c2a417ad3f5acf72f1d42f1ade5b61556b8"
+  },
+  "name": "code-review",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

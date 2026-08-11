@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "2792afa825bd5fbd4759f381a225210e3fe959b1b8479fa518eac5bfe9f52ae6"
+  },
+  "name": "shell-safety",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

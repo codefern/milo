@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "c81f621f01f324e1bcbe4c8461132d08ddd8488421464a05f39bafd23b127713"
+  },
+  "name": "web-research",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}

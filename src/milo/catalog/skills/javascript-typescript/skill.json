@@ -1,0 +1,9 @@
+{
+  "files": {
+    "SKILL.md": "176df90522b0a7a94590218b3986280df52dbe42bd80811133c89f6c71386ef8"
+  },
+  "name": "javascript-typescript",
+  "requires_milo": ">=1.0.0,<2.0.0",
+  "source": "builtin",
+  "version": "1.0.0"
+}
