@@ -100,7 +100,7 @@ class CommandPolicy:
         ("gh", "pr"),
     }
     _blocked_commands = {"sh", "bash", "zsh", "fish", "sudo", "su", "eval"}
-    _read_only_git = {"status", "diff", "log", "show", "rev-parse", "ls-files", "grep"}
+    _read_only_git = {"rev-parse", "ls-files"}
 
     def __init__(self, *, allowed_commands: Iterable[str]) -> None:
         self.allowed_commands = frozenset(allowed_commands)
@@ -126,6 +126,7 @@ class CommandPolicy:
                 arg == "-c"
                 or "alias." in arg.casefold()
                 or arg.startswith(("!", "ext::", "--exec-path", "--upload-pack", "--receive-pack"))
+                or any(token in arg.casefold() for token in ("pager", "ext-diff", "textconv"))
                 for arg in argv[1:]
             )
             if unsafe:
@@ -143,4 +144,14 @@ class CommandPolicy:
         decision = self.evaluate(argv, approved=approved)
         if not decision.allowed:
             raise SecurityError(decision.reason)
-        return tuple(argv)  # type: ignore[arg-type]
+        normalized: tuple[str, ...] = tuple(argv)  # type: ignore[arg-type]
+        if normalized[0] == "git" and len(normalized) > 1 and normalized[1] in self._read_only_git:
+            return (
+                "git",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                *normalized[1:],
+            )
+        return normalized

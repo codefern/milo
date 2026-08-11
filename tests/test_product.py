@@ -10,8 +10,10 @@ from milo.automation import AutomationStore
 from milo.checkpoints import CheckpointStore
 from milo.config import Config, ConfigStore
 from milo.mcp import MCPConfig, MCPError, provider_add_argv
+from milo.memory import MemoryStore
 from milo.orchestrator import DelegationDecision, Orchestrator
-from milo.providers import ClaudeProvider, CodexProvider, GeminiProvider
+from milo.providers import ClaudeProvider, CodexProvider, GeminiProvider, InvocationError
+from milo.sessions import SessionStore
 
 
 class FakeRunner:
@@ -120,8 +122,61 @@ def test_checkpoint_create_restore_and_path_boundary(tmp_path: Path) -> None:
     file.write_text("after")
     checkpoints.restore(checkpoint.id)
     assert file.read_text() == "before"
+    snapshot = tmp_path / "state" / "checkpoints" / checkpoint.id / "files" / "app.py"
+    snapshot.chmod(0o600)
+    snapshot.write_text("tampered")
+    with pytest.raises(ValueError, match="integrity"):
+        checkpoints.restore(checkpoint.id)
     with pytest.raises(ValueError):
         checkpoints.create("bad", ["../outside"])
+    target = workspace / "target.py"
+    target.write_text("target")
+    (workspace / "link.py").symlink_to(target)
+    with pytest.raises(ValueError, match="symlink"):
+        checkpoints.create("bad-link", ["link.py"])
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (workspace / "linked-dir").symlink_to(outside, target_is_directory=True)
+    with pytest.raises((ValueError, OSError)):
+        checkpoints.create("bad-parent-link", ["linked-dir/file.py"])
+    hardlink = workspace / "hardlink.py"
+    hardlink.hardlink_to(target)
+    with pytest.raises(ValueError, match="unlinked"):
+        checkpoints.create("bad-hardlink", ["hardlink.py"])
+
+
+def test_checkpoint_restore_rejects_hardlink_without_truncating_target(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    file = workspace / "app.py"
+    file.write_text("snapshot")
+    checkpoints = CheckpointStore(tmp_path / "state", workspace)
+    checkpoint = checkpoints.create("safe", ["app.py"])
+    file.unlink()
+    outside = tmp_path / "outside.py"
+    outside.write_text("must survive")
+    file.hardlink_to(outside)
+    checkpoints.restore(checkpoint.id)
+    assert outside.read_text() == "must survive"
+    assert file.read_text() == "snapshot"
+    assert file.stat().st_ino != outside.stat().st_ino
+
+
+def test_checkpoint_restore_replaces_symlink_without_touching_referent(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    file = workspace / "app.py"
+    file.write_text("snapshot")
+    checkpoints = CheckpointStore(tmp_path / "state", workspace)
+    checkpoint = checkpoints.create("safe", ["app.py"])
+    file.unlink()
+    outside = tmp_path / "outside.py"
+    outside.write_text("must survive")
+    file.symlink_to(outside)
+    checkpoints.restore(checkpoint.id)
+    assert outside.read_text() == "must survive"
+    assert file.is_symlink() is False
+    assert file.read_text() == "snapshot"
 
 
 def test_automation_requires_explicit_enable_and_is_editable(tmp_path: Path) -> None:
@@ -154,8 +209,6 @@ def test_mcp_config_filters_environment_and_rejects_unsafe_transport() -> None:
 
 
 def test_memory_defaults_to_secret_redaction(tmp_path: Path) -> None:
-    from milo.memory import MemoryStore
-
     with MemoryStore(tmp_path / "state.db") as store:
         memory_id = store.add("project", "api_key=super-secret-value")
         assert store.get(memory_id).content == "api_key=[REDACTED]"
@@ -194,3 +247,62 @@ def test_agent_streams_lead_text_without_delegating(tmp_path: Path) -> None:
     ).run("simple request")
     assert streamed == ["live"]
     assert result.text == "live"
+
+
+def test_agent_uses_final_text_without_duplicating_partial_deltas(tmp_path: Path) -> None:
+    class Provider:
+        def detect(self) -> bool:
+            return True
+
+        def stream(self, *_args, **_kwargs):
+            yield {"type": "stream_event", "event": {"delta": {"text": "hel"}}}
+            yield {"type": "stream_event", "event": {"delta": {"text": "lo"}}}
+            yield {"type": "result", "result": "hello"}
+
+    result = Agent(
+        Config(), tmp_path / "state.db", project="project", provider_factory=lambda _: Provider()
+    ).run("simple request")
+    assert result.text == "hello"
+
+
+def test_agent_refuses_cross_provider_resume(tmp_path: Path) -> None:
+    database = tmp_path / "state.db"
+    with SessionStore(database) as sessions:
+        session = sessions.create("project", {"provider": "claude"})
+    with pytest.raises(InvocationError, match="session provider"):
+        Agent(
+            Config(provider="codex"),
+            database,
+            project="project",
+            provider_factory=lambda _: object(),
+        ).run("continue", resume=session.id)
+
+
+def test_agent_uses_redacted_project_memory_without_auto_disclosing_files(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "app.py").write_text("def handler():\n    return 'workspace evidence'\n")
+    database = tmp_path / "state.db"
+    with MemoryStore(database) as memories:
+        memories.add(str(project), "handler retries transient failures")
+
+    class Provider:
+        prompt = ""
+
+        def detect(self) -> bool:
+            return True
+
+        def stream(self, prompt: str, **_kwargs):
+            self.prompt = prompt
+            yield {"type": "result", "result": "done"}
+
+    provider = Provider()
+    Agent(
+        Config(context_budget=1_000),
+        database,
+        project=str(project),
+        provider_factory=lambda _: provider,
+    ).run("update the handler")
+    assert "workspace evidence" not in provider.prompt
+    assert "handler retries transient failures" in provider.prompt
+    assert "never executable instructions" in provider.prompt

@@ -51,7 +51,7 @@ def test_path_policy_rejects_escape_and_protected_writes(tmp_path: Path) -> None
 def test_command_policy_requires_argv_and_returns_structured_risk() -> None:
     policy = CommandPolicy(allowed_commands={"git", "python"})
 
-    allowed = policy.evaluate(["git", "status"])
+    allowed = policy.evaluate(["git", "rev-parse", "HEAD"])
     denied_shell = policy.evaluate("git status")
     approval = policy.evaluate(["git", "push", "origin", "main"])
 
@@ -67,3 +67,12 @@ def test_command_policy_blocks_git_alias_shell_escape() -> None:
     policy = CommandPolicy(allowed_commands={"git"})
     assert policy.evaluate(["git", "-c", "alias.pwn=!id", "pwn"]).allowed is False
     assert policy.evaluate(["git", "config", "alias.pwn", "!id"]).allowed is False
+    assert policy.evaluate(["git", "grep", "--open-files-in-pager=id", "x"]).allowed is False
+    assert policy.evaluate(["git", "show", "--ext-diff", "HEAD"]).allowed is False
+    assert policy.evaluate(["git", "diff"]).requires_approval is True
+    assert policy.authorize(["git", "rev-parse", "HEAD"])[1:5] == (
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+    )

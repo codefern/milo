@@ -16,6 +16,10 @@ Milo exists because provider CLIs are excellent execution engines, but switching
 
 ![Milo first-run setup](docs/screenshots/setup.png)
 
+The screenshots are untouched direct terminal captures of Milo running in an X terminal. They were not composited, recreated from copied output, cropped, resized, annotated, or visually edited.
+
+![Milo interactive session using Codex](docs/screenshots/codex-chat.png)
+
 ## Why Milo
 
 - **Provider-native:** delegates authentication and inference to official CLIs rather than proxying credentials.
@@ -27,7 +31,7 @@ Milo exists because provider CLIs are excellent execution engines, but switching
 - **Least-privilege tools:** JSON schemas, explicit permissions, argv-only command execution, workspace path boundaries, protected roots, public-HTTPS research, and redacted audit events.
 - **Clean automation:** jobs are inspectable and always created paused. Enabling persistence is a separate user action.
 
-![Milo diagnostics and catalog](docs/screenshots/doctor.png)
+![Milo diagnostics](docs/screenshots/doctor.png)
 
 ## Supported providers
 
@@ -238,7 +242,7 @@ Core boundaries:
 - `0700` state directories and `0600` state/config files;
 - canonical workspace path checks with `/opt/va-backend` protected from writes;
 - no shell strings in the command policy;
-- no symlinks in skill packages or checkpoints;
+- no symlinks in skill packages or checkpoints; checkpoint snapshots are read-only and hash-verified;
 - trusted skill sources plus SHA-256 file verification;
 - public HTTPS-only built-in research, with DNS/IP checks against local networks;
 - explicit approval for high-risk Git/GitHub operations;
@@ -256,7 +260,7 @@ uv run mypy src/milo
 uv build
 ```
 
-The suite covers provider argv contracts, auth detection, stream parsing, setup, skills, memory, context selection, sessions, recovery, tools, command/path policy, MCP environment filtering, automation, delegation, and secret redaction. Release verification also executes real Codex, provider failure paths, session continuation, CLI setup/diagnostics, packaging, dependency audit, and an isolated tmux user journey.
+CI covers provider argv contracts, auth detection, stream parsing, setup, skills, memory, context selection, sessions, recovery, tools, command/path policy, MCP environment filtering, automation, delegation, secret redaction, linting, typing, and package builds. Maintainer release verification additionally executes live Codex, provider failure paths, session continuation, setup/diagnostics, dependency audit, and an isolated tmux user journey; those checks require local provider credentials and are intentionally outside public CI.
 
 ## Troubleshooting
 

@@ -70,13 +70,35 @@ def test_builtin_tools_are_modular_and_terminal_uses_argv_policy(tmp_path: Path)
     )
     registry.invoke(
         "terminal.run",
-        {"argv": ["git", "status"]},
+        {"argv": ["git", "rev-parse", "HEAD"]},
         permissions={Permission.EXECUTE},
     )
-    assert executed == [("git", "status")]
+    assert executed == [
+        (
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "rev-parse",
+            "HEAD",
+        )
+    ]
     with pytest.raises((SecurityError, ValueError)):
         registry.invoke(
             "terminal.run",
             {"argv": "git status"},
+            permissions={Permission.EXECUTE},
+        )
+    with pytest.raises(ValueError, match="approved"):
+        registry.invoke(
+            "git.run",
+            {"argv": ["push"], "approved": True},
+            permissions={Permission.GIT_WRITE},
+        )
+    with pytest.raises(SecurityError, match="missing permission"):
+        registry.invoke(
+            "git.run",
+            {"argv": ["status"]},
             permissions={Permission.EXECUTE},
         )
