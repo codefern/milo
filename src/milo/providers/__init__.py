@@ -141,6 +141,7 @@ class CodexProvider(_Provider):
             'model_reasoning_effort="low"',
             "--sandbox",
             "workspace-write",
+            "--skip-git-repo-check",
         ]
         if session_id:
             argv.extend(["resume", session_id])

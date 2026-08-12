@@ -97,6 +97,7 @@ def test_stream_parses_jsonl_and_builds_provider_argv() -> None:
             'model_reasoning_effort="low"',
             "--sandbox",
             "workspace-write",
+            "--skip-git-repo-check",
             "resume",
             "abc",
             "--json",
