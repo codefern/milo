@@ -552,6 +552,61 @@ def test_config_set_parser_supports_model_and_effort() -> None:
     assert args.effort == "high"
 
 
+def test_config_set_parser_supports_full_tuning_flags() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        [
+            "config",
+            "set",
+            "--provider",
+            "claude",
+            "--model",
+            "opus",
+            "--effort",
+            "medium",
+            "--max-agents",
+            "4",
+            "--context-budget",
+            "16000",
+        ]
+    )
+    assert args.config_action == "set"
+    assert args.provider == "claude"
+    assert args.model == "opus"
+    assert args.effort == "medium"
+    assert args.max_agents == 4
+    assert args.context_budget == 16000
+
+
+def test_setup_parser_accepts_runtime_tuning() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        [
+            "setup",
+            "--provider",
+            "claude",
+            "--model",
+            "opus",
+            "--effort",
+            "low",
+            "--max-agents",
+            "5",
+            "--context-budget",
+            "14000",
+            "--skills",
+            "none",
+            "--non-interactive",
+        ]
+    )
+    assert args.provider == "claude"
+    assert args.model == "opus"
+    assert args.effort == "low"
+    assert args.max_agents == 5
+    assert args.context_budget == 14000
+    assert args.skills == "none"
+    assert args.non_interactive is True
+
+
 def test_config_command_set_updates_defaults(tmp_path, monkeypatch, capsys) -> None:
     home = tmp_path
     monkeypatch.setenv("MILO_HOME", str(home))
@@ -566,6 +621,19 @@ def test_config_command_set_updates_defaults(tmp_path, monkeypatch, capsys) -> N
     assert config.provider == "claude"
     assert config.model == "claude-3-7-sonnet"
     assert config.effort == "high"
+
+
+def test_config_command_set_updates_tuning(tmp_path, monkeypatch, capsys) -> None:
+    home = tmp_path
+    monkeypatch.setenv("MILO_HOME", str(home))
+    ConfigStore(home / "config.json").save(Config())
+
+    args = Namespace(config_action="set", max_agents=5, context_budget=16000)
+    assert cli.config_command(args) == 0
+
+    config = ConfigStore(home / "config.json").load()
+    assert config.max_agents == 5
+    assert config.context_budget == 16000
 
 
 def test_setup_parser_and_help_text_mentions_update_and_doctor(capsys) -> None:

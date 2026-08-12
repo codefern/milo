@@ -167,9 +167,10 @@ Status includes provider/model configuration and current cached update state.
 Milo is now explicit about provider runtime defaults in both setup and session runtime:
 
 ```bash
-milo setup --provider codex --model gpt-5 --effort medium
+milo setup --provider codex --model gpt-5 --effort medium --max-agents 4 --context-budget 24000
 milo config set --provider claude --model opus-4
 milo config set --effort high
+milo config set --max-agents 4 --context-budget 32000
 milo chat --model gpt-5 --effort medium "Review the design"
 ```
 
@@ -179,6 +180,8 @@ Within interactive mode, use:
 /config show
 /config set --provider codex --model gpt-5
 /config set --effort high
+/config set --max-agents 4
+/config set --context-budget 32000
 ```
 
 The current defaults are available from `milo config show`, and every non-interactive command consumes those defaults unless explicitly overridden.

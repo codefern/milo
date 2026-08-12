@@ -101,6 +101,20 @@ def _catalog_metadata() -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
+def _parse_max_agents(value: str) -> int:
+    parsed = int(value)
+    if not 1 <= parsed <= 8:
+        raise argparse.ArgumentTypeError("max-agents must be between 1 and 8")
+    return parsed
+
+
+def _parse_context_budget(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1000:
+        raise argparse.ArgumentTypeError("context-budget must be at least 1000")
+    return parsed
+
+
 def _check_update_availability(*, show_only_when_available: bool = True) -> None:
     report = update_service.check_for_update(
         state_file=update_service.update_state_path(_home()),
@@ -244,7 +258,17 @@ def setup(args: argparse.Namespace) -> int:
             console.print("[red]Authentication could not be verified.[/]")
             return 2
 
-    config = Config(provider=provider_name, model=args.model, effort=args.effort)
+    values = vars(args)
+    max_agents = cast(int, values.get("max_agents", 3))
+    context_budget = cast(int, values.get("context_budget", 24_000))
+
+    config = Config(
+        provider=provider_name,
+        model=cast(str | None, values.get("model")),
+        effort=cast(str, values.get("effort", "low")) or "low",
+        max_agents=max_agents,
+        context_budget=context_budget,
+    )
     _config_store().save(config)
     skill_choice = args.skills
     if skill_choice is None and sys.stdin.isatty():
@@ -355,17 +379,22 @@ def config_command(args: argparse.Namespace) -> int:
 
     if args.config_action == "set":
         config = _config_store().load() if config_path.exists() else Config()
-        updates: dict[str, str] = {}
-        if args.provider is not None:
-            updates["provider"] = args.provider
-        if args.model is not None:
-            updates["model"] = args.model
-        if args.effort is not None:
-            updates["effort"] = args.effort
+        values = vars(args)
+        updates: dict[str, str | int] = {}
+        if values.get("provider") is not None:
+            updates["provider"] = cast(str, values["provider"])
+        if values.get("model") is not None:
+            updates["model"] = cast(str, values["model"])
+        if values.get("effort") is not None:
+            updates["effort"] = cast(str, values["effort"])
+        if values.get("max_agents") is not None:
+            updates["max_agents"] = cast(int, values["max_agents"])
+        if values.get("context_budget") is not None:
+            updates["context_budget"] = cast(int, values["context_budget"])
 
         if not updates:
             console.print(
-                "[yellow]Usage: milo config set requires at least one of --provider, --model, --effort[/]"
+                "[yellow]Usage: milo config set requires at least one of --provider, --model, --effort, --max-agents, --context-budget[/]"
             )
             return 2
 
@@ -375,13 +404,15 @@ def config_command(args: argparse.Namespace) -> int:
 
         next_config = replace(
             config,
-            provider=next_provider,
-            model=next_model,
-            effort=next_effort,
+            provider=cast(str, next_provider),
+            model=cast(str | None, next_model),
+            effort=cast(str, next_effort),
+            max_agents=cast(int, updates.get("max_agents", config.max_agents)),
+            context_budget=cast(int, updates.get("context_budget", config.context_budget)),
         )
         _config_store().save(next_config)
         console.print(
-            f"Updated config: provider={next_config.provider}, model={next_config.model or 'default'}, effort={next_config.effort}"
+            f"Updated config: provider={next_config.provider}, model={next_config.model or 'default'}, effort={next_config.effort}, max_agents={next_config.max_agents}, context_budget={next_config.context_budget}"
         )
         return 0
 
@@ -759,15 +790,27 @@ def interactive() -> int:
                 continue
             if parts[1] != "set":
                 console.print(
-                    "[yellow]usage: /config show | /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high][/ ]"
+                    "[yellow]usage: /config show | /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high] [--max-agents <1-8>] [--context-budget <>=1000] [/ ]"
                 )
                 continue
-            parsed = argparse.Namespace(provider=None, model=None, effort=None)
+            parsed = argparse.Namespace(
+                provider=None,
+                model=None,
+                effort=None,
+                max_agents=None,
+                context_budget=None,
+            )
             index = 2
             valid = True
             while index < len(parts):
                 key = parts[index]
-                if key not in {"--provider", "--model", "--effort"}:
+                if key not in {
+                    "--provider",
+                    "--model",
+                    "--effort",
+                    "--max-agents",
+                    "--context-budget",
+                }:
                     valid = False
                     break
                 if index + 1 >= len(parts):
@@ -786,14 +829,34 @@ def interactive() -> int:
                         valid = False
                         break
                     parsed.effort = value
+                elif key == "--max-agents":
+                    try:
+                        parsed.max_agents = _parse_max_agents(value)
+                    except (ValueError, argparse.ArgumentTypeError):
+                        valid = False
+                        break
+                elif key == "--context-budget":
+                    try:
+                        parsed.context_budget = _parse_context_budget(value)
+                    except (ValueError, argparse.ArgumentTypeError):
+                        valid = False
+                        break
                 index += 2
             if not valid:
                 console.print(
-                    "[yellow]usage: /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high][/ ]"
+                    "[yellow]usage: /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high] [--max-agents <1-8>] [--context-budget <>=1000] [/ ]"
                 )
                 continue
-            if parsed.provider is None and parsed.model is None and parsed.effort is None:
-                console.print("[yellow]use --provider, --model, or --effort with /config set[/]")
+            if (
+                parsed.provider is None
+                and parsed.model is None
+                and parsed.effort is None
+                and parsed.max_agents is None
+                and parsed.context_budget is None
+            ):
+                console.print(
+                    "[yellow]use --provider, --model, --effort, --max-agents, or --context-budget with /config set[/]"
+                )
                 continue
             config_command(
                 argparse.Namespace(
@@ -801,6 +864,8 @@ def interactive() -> int:
                     provider=parsed.provider,
                     model=parsed.model,
                     effort=parsed.effort,
+                    max_agents=parsed.max_agents,
+                    context_budget=parsed.context_budget,
                 )
             )
             continue
@@ -871,6 +936,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("low", "medium", "high"),
         default="low",
     )
+    setup_parser.add_argument("--max-agents", type=_parse_max_agents)
+    setup_parser.add_argument("--context-budget", type=_parse_context_budget)
     setup_parser.add_argument("--skills", choices=("recommended", "all", "none"))
     setup_parser.add_argument("--non-interactive", action="store_true")
 
@@ -904,6 +971,8 @@ def build_parser() -> argparse.ArgumentParser:
     config_set.add_argument("--provider", choices=PROVIDERS)
     config_set.add_argument("--model")
     config_set.add_argument("--effort", choices=("low", "medium", "high"))
+    config_set.add_argument("--max-agents", type=_parse_max_agents)
+    config_set.add_argument("--context-budget", type=_parse_context_budget)
 
     status_parser = sub.add_parser("status", help="show current CLI status")
     status_parser.add_argument("--json", action="store_true", help="output JSON payload")
