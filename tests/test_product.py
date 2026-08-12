@@ -12,6 +12,7 @@ import pytest
 from rich.console import Console
 
 from milo import cli
+from milo import update as update_module
 from milo.agent import Agent
 from milo.automation import AutomationStore
 from milo.checkpoints import CheckpointStore
@@ -445,3 +446,174 @@ def test_setup_script_is_safe_and_shell_valid() -> None:
     assert "command -v milo" not in content
     assert "curl" not in content
     assert subprocess.run(["/usr/bin/bash", "-n", str(script)], check=False).returncode == 0
+
+
+def test_update_module_reads_release_tag_and_handles_invalid_payload() -> None:
+    valid_payload = StringIO('{"tag_name": "v1.2.3"}')
+    invalid_payload = StringIO('{"name": "milo"}')
+
+    assert (
+        update_module.fetch_latest_version(opener=lambda *_args, **_kwargs: valid_payload)
+        == "1.2.3"
+    )
+    assert (
+        update_module.fetch_latest_version(opener=lambda *_args, **_kwargs: invalid_payload) is None
+    )
+
+
+def test_update_resolve_update_interval_supports_cli_and_env_override(monkeypatch) -> None:
+    assert update_module.resolve_update_interval(42.0) == 42.0
+    assert update_module.resolve_update_interval(None) == 24 * 60 * 60
+
+    monkeypatch.setenv("MILO_UPDATE_CHECK_INTERVAL_SECONDS", "7200")
+    assert update_module.resolve_update_interval(None) == 7200.0
+    monkeypatch.setenv("MILO_UPDATE_CHECK_INTERVAL_SECONDS", "0")
+    assert update_module.resolve_update_interval(None) == 0.0
+
+    monkeypatch.setenv("MILO_UPDATE_CHECK_INTERVAL_SECONDS", "-1")
+    with pytest.raises(ValueError):
+        update_module.resolve_update_interval(None)
+
+    monkeypatch.setenv("MILO_UPDATE_CHECK_INTERVAL_SECONDS", "invalid")
+    with pytest.raises(ValueError):
+        update_module.resolve_update_interval(None)
+
+
+def test_update_checks_state_cache_and_only_refreshes_when_needed(tmp_path) -> None:
+    state_file = tmp_path / "update.json"
+    update_module.save_update_state(
+        state_file,
+        update_module.UpdateState(last_check=1_000.0, latest="1.9.0", error=None),
+    )
+    captured = {"called": False}
+
+    def fail_to_contact_api(*_args, **_kwargs) -> None:
+        captured["called"] = True
+        raise AssertionError("unexpected network call")
+
+    report = update_module.check_for_update(
+        current="1.0.0",
+        state_file=state_file,
+        force=False,
+        now=1_002.0,
+        interval=3600.0,
+        opener=fail_to_contact_api,
+    )
+    assert captured["called"] is False
+    assert report.latest == "1.9.0"
+    assert report.available is True
+
+
+def test_update_command_can_apply_without_prompt_when_yes_flag_is_set(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("MILO_HOME", str(tmp_path))
+    tmp_path.joinpath("config.json").write_text("{}")
+    monkeypatch.setattr(
+        update_module,
+        "check_for_update",
+        lambda **_kwargs: update_module.UpdateReport(
+            current="1.0.0", latest="1.1.0", available=True, checked_at=0.0
+        ),
+    )
+    monkeypatch.setattr(
+        update_module,
+        "apply_update",
+        lambda **_kwargs: subprocess.CompletedProcess(
+            args=("uv", "tool", "install"), returncode=0, stdout="ok", stderr=""
+        ),
+    )
+    args = Namespace(action="apply", yes=True, force=False, json=False, interval=None)
+    assert cli.update_command(args) == 0
+
+
+def test_setup_parser_and_help_text_mentions_update_and_doctor(capsys) -> None:
+    parser = cli.build_parser()
+    parser.print_help()
+    rendered = capsys.readouterr().out.lower()
+    assert "update" in rendered
+    assert "doctor" in rendered
+    assert "status" in rendered
+
+
+def test_update_command_json_and_force_flag_in_parser() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["update", "check", "--force", "--yes", "--json", "--interval", "12.5"]
+    )
+    assert args.action == "check"
+    assert args.force is True
+    assert args.yes is True
+    assert args.json is True
+    assert args.interval == 12.5
+
+
+def test_status_command_outputs_json_and_uses_cached_update_payload(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("MILO_HOME", str(tmp_path))
+    from milo.config import ConfigStore
+
+    ConfigStore(tmp_path / "config.json").save(Config(provider="codex", model="gpt-4o-mini"))
+    update_module.save_update_state(
+        update_module.update_state_path(tmp_path),
+        update_module.UpdateState(
+            last_check=1_700_000_000.0,
+            latest="9.9.9",
+            error=None,
+        ),
+    )
+
+    args = Namespace(json=True)
+    assert cli.status_command(args) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["provider"] == "codex"
+    assert output["model"] == "gpt-4o-mini"
+    assert output["update"]["latest"] == "9.9.9"
+
+
+def test_status_command_json_payload_contract_is_stable(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("MILO_HOME", str(tmp_path))
+    from milo.config import ConfigStore
+
+    ConfigStore(tmp_path / "config.json").save(Config(provider="gemini", model="g2"))
+    monkeypatch.setattr(
+        update_module,
+        "check_for_update",
+        lambda **_kwargs: update_module.UpdateReport(
+            current="1.2.3",
+            latest="1.4.0",
+            available=True,
+            checked_at=1_700_100_000.0,
+        ),
+    )
+
+    args = Namespace(json=True)
+    assert cli.status_command(args) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["version"] == "1.0.0"
+    assert set(output.keys()) == {
+        "provider",
+        "model",
+        "version",
+        "home",
+        "project",
+        "platform",
+        "python",
+        "update",
+    }
+    assert set(output["update"].keys()) == {
+        "current",
+        "latest",
+        "available",
+        "checked_at",
+        "error",
+    }
+    assert output["provider"] == "gemini"
+    assert output["model"] == "g2"
+    assert output["update"]["current"] == "1.2.3"
+    assert output["update"]["latest"] == "1.4.0"
+    assert output["update"]["available"] is True
+    assert isinstance(output["update"]["checked_at"], float)
+    assert output["update"]["error"] is None

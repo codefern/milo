@@ -133,7 +133,37 @@ milo sessions show <milo-session-id>
 
 The matching provider session identifier remains internal session metadata and is passed only to that provider's official resume interface.
 
+## Updates
+
+Milo can check for and apply updates through the same CLI:
+
+```bash
+milo update
+milo update check
+milo update check --force
+milo update check --json
+milo update check --interval 7200
+MILO_UPDATE_CHECK_INTERVAL_SECONDS=7200 milo update check
+milo update apply
+milo update apply --yes  # or -y
+milo update apply --interval 0  # bypass cache timeout checks
+```
+
+`milo` also checks for releases in interactive mode and shows a brief update notice when a newer version is available.
+
+## Status
+
+Get a compact health snapshot of your local state:
+
+```bash
+milo status
+milo status --json
+```
+
+Status includes provider/model configuration and current cached update state.
+
 ## Skills
+
 
 ```bash
 milo skills catalog

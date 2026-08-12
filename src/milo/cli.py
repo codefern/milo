@@ -6,6 +6,7 @@ import os
 import platform
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from importlib import resources
@@ -24,6 +25,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import __version__
+from . import update as update_service
 from .agent import Agent
 from .automation import AutomationStore
 from .checkpoints import CheckpointStore
@@ -69,7 +71,7 @@ def _startup_panel(config: Config, cwd: Path) -> Panel:
         + (f", +{len(skill_names) - 8} more" if len(skill_names) > 8 else "")
         + f"\n[dim]{len(skill_names)} validated catalog skills[/]"
         + "\n\n[bold]Session Commands[/]\n"
-        + "/help · /new · /retry · /clear · /status · /sessions · /skills · /memory · /doctor · /exit"
+        + "/help · /new · /retry · /clear · /status · /sessions · /skills · /memory · /doctor · /update · /exit"
     )
     layout = Table.grid(expand=True, padding=(0, 2))
     layout.add_column(ratio=2)
@@ -98,6 +100,83 @@ def _catalog() -> Path:
 def _catalog_metadata() -> dict[str, object]:
     value: Any = json.loads(resources.files("milo").joinpath("catalog", "catalog.json").read_text())
     return cast(dict[str, object], value)
+
+
+def _check_update_availability(*, show_only_when_available: bool = True) -> None:
+    report = update_service.check_for_update(
+        state_file=update_service.update_state_path(_home()),
+        force=False,
+    )
+    if report.error:
+        if not show_only_when_available:
+            console.print(Text(f"Update check failed: {report.error}", style="yellow"))
+        return
+    if report.available:
+        console.print(
+            Text(
+                f"Update available: {report.current} -> {report.latest}",
+                style="yellow",
+            )
+        )
+        console.print("Run: [yellow]milo update apply[/]", style="dim")
+    elif not show_only_when_available:
+        console.print(f"Milo is up to date ({report.current}).")
+
+
+def _status_payload(config: Config) -> dict[str, object]:
+    report = update_service.check_for_update(
+        current=__version__,
+        state_file=update_service.update_state_path(_home()),
+        force=False,
+    )
+    status: dict[str, object] = {
+        "provider": config.provider,
+        "model": config.model,
+        "version": __version__,
+        "home": str(_home()),
+        "project": str(Path.cwd().resolve()),
+        "platform": f"{platform.system()} {platform.machine()}",
+        "python": platform.python_version(),
+        "update": {
+            "current": report.current,
+            "latest": report.latest,
+            "available": report.available,
+            "checked_at": report.checked_at,
+            "error": report.error,
+        },
+    }
+    return status
+
+
+def _render_status_output(config: Config) -> str:
+    payload = _status_payload(config)
+    update = payload["update"]
+    if not isinstance(update, dict):
+        return "status unavailable"
+    update = cast(dict[str, object], update)
+
+    update_line = "Update: up to date"
+    if update.get("available"):
+        update_line = f"Update available ({update.get('current')} -> {update.get('latest')})"
+    elif update.get("error"):
+        update_line = f"Update check failed: {update.get('error')}"
+
+    checked = update.get("checked_at")
+    checked_txt = (
+        f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(int(checked)))}"
+        if isinstance(checked, (int, float))
+        else "unknown"
+    )
+
+    return (
+        f"Provider: {payload['provider']}\n"
+        f"Model: {payload['model'] or 'default'}\n"
+        f"Version: {payload['version']}\n"
+        f"{update_line}\n"
+        f"Project: {payload['project']}\n"
+        f"Checked: {checked_txt}\n"
+        f"Home: {payload['home']}"
+    )
 
 
 def _provider_status(name: str) -> tuple[bool, str]:
@@ -199,6 +278,70 @@ def setup(args: argparse.Namespace) -> int:
             f"[bold green]Setup complete[/]\nProvider: {provider_name}\nSkills installed: {installed}\nState: {_home()}"
         )
     )
+    return 0
+
+
+def status_command(args: argparse.Namespace) -> int:
+    config = _config_store().load()
+    if args.json:
+        console.print(json.dumps(_status_payload(config), sort_keys=True, indent=2))
+        return 0
+    console.print(
+        Panel.fit(_render_status_output(config), title="Milo status", border_style="cyan")
+    )
+    return 0
+
+
+def update_command(args: argparse.Namespace) -> int:
+    report = update_service.check_for_update(
+        current=__version__,
+        state_file=update_service.update_state_path(_home()),
+        force=args.force,
+        interval=args.interval,
+    )
+    if args.json:
+        console.print(
+            json.dumps(
+                {
+                    "current": report.current,
+                    "latest": report.latest,
+                    "available": report.available,
+                    "checked_at": report.checked_at,
+                    "error": report.error,
+                    "interval": args.interval if args.interval is not None else None,
+                },
+                sort_keys=True,
+                indent=2,
+            )
+        )
+        return 0 if report.error is None else 1
+    if args.action == "check":
+        if report.error:
+            console.print(Text(f"Update check failed: {report.error}", style="yellow"))
+            return 1
+        if report.available and report.latest:
+            console.print(f"Update available: {report.current} -> {report.latest}")
+            return 0
+        console.print(f"Milo is up to date ({report.current}).")
+        return 0
+
+    if report.error:
+        console.print(Text(f"Update check failed: {report.error}", style="yellow"))
+        return 1
+    if not report.available:
+        console.print(f"Milo is up to date ({report.current}).")
+        return 0
+    if not args.yes:
+        accepted = console.input("Apply update now? [y/N]: ").strip().lower()
+        if accepted not in {"y", "yes"}:
+            console.print("Update cancelled.")
+            return 0
+    try:
+        update_service.apply_update()
+    except RuntimeError as exc:
+        console.print(Text(f"Update failed: {exc}", style="red"))
+        return 1
+    console.print(f"Updated to {report.latest}. Restart Milo to use the new version.")
     return 0
 
 
@@ -426,6 +569,7 @@ def interactive() -> int:
             return code
     config = _config_store().load()
     console.print(_startup_panel(config, Path.cwd().resolve()))
+    _check_update_availability(show_only_when_available=True)
     console.print("[bold]Welcome to Milo.[/] Type a task or /help for commands.\n")
     history_path = _home() / "history"
     history_path.touch(mode=0o600, exist_ok=True)
@@ -446,6 +590,7 @@ def interactive() -> int:
         "/skills",
         "/memory",
         "/doctor",
+        "/update",
         "/exit",
         "/quit",
     ]
@@ -481,7 +626,7 @@ def interactive() -> int:
                 Panel.fit(
                     "[bold]Session[/]  /new /retry /clear /status /sessions\n"
                     "[bold]Knowledge[/] /skills /memory\n"
-                    "[bold]System[/]   /doctor /help /exit\n\n"
+                    "[bold]System[/]   /doctor /update /help /exit\n\n"
                     "Complex tasks delegate automatically; provider sessions continue natively.",
                     title="Milo commands",
                     border_style="cyan",
@@ -501,10 +646,12 @@ def interactive() -> int:
             continue
         if prompt == "/status":
             console.print(
-                f"[bold]Provider:[/] {escape(config.provider)}  "
-                f"[bold]Model:[/] {escape(config.model or 'default')}  "
-                f"[bold]Session:[/] {'active' if active_session else 'new'}  "
-                f"[bold]Project:[/] {escape(str(Path.cwd().resolve()))}"
+                Panel.fit(
+                    _render_status_output(config)
+                    + f"\nSession: {'active' if active_session else 'new'}",
+                    title="Milo status",
+                    border_style="cyan",
+                )
             )
             continue
         if prompt == "/sessions":
@@ -520,6 +667,41 @@ def interactive() -> int:
             continue
         if prompt == "/doctor":
             doctor(argparse.Namespace())
+            continue
+        if prompt.startswith("/update"):
+            parts = prompt.split()
+            action = "check"
+            if len(parts) > 1:
+                action = parts[1]
+                if action not in {"check", "apply"}:
+                    console.print(
+                        "[yellow]usage: /update [check|apply] [--yes|-y] [--interval N][/]"
+                    )
+                    continue
+            options = {"yes": False, "force": False}
+            interval: float | None = None
+            if "--yes" in parts or "-y" in parts:
+                options["yes"] = True
+            if "--force" in parts:
+                options["force"] = True
+            if "--interval" in parts:
+                idx = parts.index("--interval")
+                if idx + 1 >= len(parts):
+                    console.print("[yellow]usage: /update ... --interval <seconds>[/]")
+                    continue
+                try:
+                    interval = float(parts[idx + 1])
+                except ValueError:
+                    console.print("[yellow]--interval requires a numeric seconds value[/]")
+                    continue
+            args = argparse.Namespace(
+                action=action,
+                yes=options["yes"],
+                force=options["force"],
+                json=False,
+                interval=interval,
+            )
+            update_command(args)
             continue
         if prompt == "/retry":
             if not last_prompt:
@@ -544,18 +726,47 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="milo", description="Provider-native AI agent CLI")
     parser.add_argument("--version", action="version", version=f"Milo {__version__}")
     sub = parser.add_subparsers(dest="command")
+
     setup_parser = sub.add_parser("setup", help="configure a provider and skills")
     setup_parser.add_argument("--provider", choices=PROVIDERS)
     setup_parser.add_argument("--model")
     setup_parser.add_argument("--skills", choices=("recommended", "all", "none"))
     setup_parser.add_argument("--non-interactive", action="store_true")
+
     sub.add_parser("doctor", help="diagnose installation")
+
+    update_parser = sub.add_parser("update", help="check or apply updates")
+    update_parser.add_argument("action", nargs="?", choices=("check", "apply"), default="check")
+    update_parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="apply update without confirmation",
+    )
+    update_parser.add_argument("--json", action="store_true", help="print machine-readable status")
+    update_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="force refresh of update metadata before acting",
+    )
+    update_parser.add_argument(
+        "--interval",
+        type=float,
+        default=None,
+        help="override update check interval in seconds",
+    )
+
+    status_parser = sub.add_parser("status", help="show current CLI status")
+    status_parser.add_argument("--json", action="store_true", help="output JSON payload")
+
     chat_parser = sub.add_parser("chat", help="run a task")
     chat_parser.add_argument("prompt", nargs="*")
     chat_parser.add_argument("--provider", choices=PROVIDERS)
     chat_parser.add_argument("--model")
     chat_parser.add_argument("--resume")
     chat_parser.add_argument("--no-delegate", action="store_true")
+    chat_parser.add_argument("--show-session", action="store_true")
+
     skill_parser = sub.add_parser("skills", help="manage validated skills")
     skill_sub = skill_parser.add_subparsers(dest="skill_action", required=True)
     skill_sub.add_parser("list")
@@ -564,6 +775,7 @@ def build_parser() -> argparse.ArgumentParser:
     for action in ("install", "remove"):
         item = skill_sub.add_parser(action)
         item.add_argument("name")
+
     memory_parser = sub.add_parser("memory", help="manage project memory")
     memory_sub = memory_parser.add_subparsers(dest="memory_action", required=True)
     add = memory_sub.add_parser("add")
@@ -573,6 +785,7 @@ def build_parser() -> argparse.ArgumentParser:
     memory_sub.add_parser("list")
     remove = memory_sub.add_parser("remove")
     remove.add_argument("id", type=int)
+
     sessions_parser = sub.add_parser("sessions", help="inspect sessions")
     sessions_sub = sessions_parser.add_subparsers(dest="sessions_action", required=True)
     sessions_sub.add_parser("list")
@@ -581,6 +794,7 @@ def build_parser() -> argparse.ArgumentParser:
     for action in ("show", "remove"):
         item = sessions_sub.add_parser(action)
         item.add_argument("id")
+
     checkpoints = sub.add_parser("checkpoint", help="create and restore file checkpoints")
     checkpoint_sub = checkpoints.add_subparsers(dest="checkpoint_action", required=True)
     create = checkpoint_sub.add_parser("create")
@@ -589,6 +803,7 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint_sub.add_parser("list")
     restore = checkpoint_sub.add_parser("restore")
     restore.add_argument("id")
+
     automation = sub.add_parser("automation", help="manage paused-by-default automations")
     automation_sub = automation.add_subparsers(dest="automation_action", required=True)
     add_job = automation_sub.add_parser("add")
@@ -599,6 +814,7 @@ def build_parser() -> argparse.ArgumentParser:
     for action in ("enable", "pause", "remove"):
         item = automation_sub.add_parser(action)
         item.add_argument("id")
+
     mcp = sub.add_parser("mcp", help="manage permission-scoped MCP servers")
     mcp_sub = mcp.add_subparsers(dest="mcp_action", required=True)
     mcp_sub.add_parser("list")
@@ -614,6 +830,7 @@ def build_parser() -> argparse.ArgumentParser:
     for action in ("sync", "unsync"):
         item = mcp_sub.add_parser(action)
         item.add_argument("name")
+
     return parser
 
 
@@ -626,6 +843,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "setup": setup,
         "doctor": doctor,
         "chat": chat,
+        "update": update_command,
+        "status": status_command,
         "skills": skills_command,
         "memory": memory_command,
         "sessions": sessions_command,
