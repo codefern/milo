@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -634,6 +635,79 @@ def test_config_command_set_updates_tuning(tmp_path, monkeypatch, capsys) -> Non
     config = ConfigStore(home / "config.json").load()
     assert config.max_agents == 5
     assert config.context_budget == 16000
+
+
+def test_config_command_validate_invalid_config(tmp_path, monkeypatch) -> None:
+    home = tmp_path
+    monkeypatch.setenv("MILO_HOME", str(home))
+    home.joinpath("config.json").write_text(
+        '{"provider":"codex","max_agents":20,"effort":"low","context_budget":1000}'
+    )
+
+    args = Namespace(config_action="validate", json=False)
+    assert cli.config_command(args) == 1
+
+
+def test_config_command_reset_requires_confirmation_by_default(tmp_path, monkeypatch) -> None:
+    home = tmp_path
+    monkeypatch.setenv("MILO_HOME", str(home))
+    ConfigStore(home / "config.json").save(
+        Config(provider="claude", max_agents=5, context_budget=16000)
+    )
+
+    args = Namespace(config_action="reset", yes=False)
+    assert cli.config_command(args) == 2
+
+    config = ConfigStore(home / "config.json").load()
+    assert config.provider == "claude"
+
+
+def test_config_command_reset_with_force(tmp_path, monkeypatch) -> None:
+    home = tmp_path
+    monkeypatch.setenv("MILO_HOME", str(home))
+    ConfigStore(home / "config.json").save(
+        Config(provider="claude", max_agents=5, context_budget=16000)
+    )
+
+    args = Namespace(config_action="reset", yes=True)
+    assert cli.config_command(args) == 0
+
+    config = ConfigStore(home / "config.json").load()
+    assert config == Config()
+
+
+def test_config_parser_supports_reset_and_validate() -> None:
+    parser = cli.build_parser()
+    reset = parser.parse_args(["config", "reset", "--yes"])
+    assert reset.config_action == "reset"
+    assert reset.yes is True
+
+    validate = parser.parse_args(["config", "validate", "--json"])
+    assert validate.config_action == "validate"
+    assert validate.json is True
+
+
+def test_config_command_handles_corrupt_file_as_invalid(capsys, tmp_path, monkeypatch) -> None:
+    home = tmp_path
+    monkeypatch.setenv("MILO_HOME", str(home))
+    home.joinpath("config.json").write_text("not-json", encoding="utf-8")
+
+    assert cli.config_command(argparse.Namespace(config_action="validate", json=True)) == 1
+    captured = capsys.readouterr().out
+    assert "invalid configuration" in captured.lower()
+    assert '"status": "invalid"' in captured
+
+
+def test_doctor_reports_invalid_config(capsys, tmp_path, monkeypatch) -> None:
+    home = tmp_path
+    monkeypatch.setenv("MILO_HOME", str(home))
+    home.joinpath("config.json").write_text(
+        '{"provider":"codex","max_agents":20,"effort":"low","context_budget":1000}',
+        encoding="utf-8",
+    )
+
+    assert cli.doctor(argparse.Namespace()) == 1
+    assert "FAIL" in capsys.readouterr().out
 
 
 def test_setup_parser_and_help_text_mentions_update_and_doctor(capsys) -> None:

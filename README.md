@@ -171,6 +171,10 @@ milo setup --provider codex --model gpt-5 --effort medium --max-agents 4 --conte
 milo config set --provider claude --model opus-4
 milo config set --effort high
 milo config set --max-agents 4 --context-budget 32000
+milo config set --provider gemini --effort high
+milo config set --max-agents 5 --context-budget 32000
+milo config validate --json
+milo config reset --yes
 milo chat --model gpt-5 --effort medium "Review the design"
 ```
 

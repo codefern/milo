@@ -416,6 +416,39 @@ def config_command(args: argparse.Namespace) -> int:
         )
         return 0
 
+    if args.config_action == "validate":
+        try:
+            config = _config_store().load() if config_path.exists() else Config()
+            config.validate()
+        except ValueError as exc:
+            console.print(f"[red]Invalid configuration: {exc}[/]")
+            console.print("Run: [yellow]milo config reset[/] to restore defaults")
+            if getattr(args, "json", False):
+                console.print(
+                    json.dumps({"status": "invalid", "error": str(exc)}, sort_keys=True, indent=2)
+                )
+            return 1
+        if getattr(args, "json", False):
+            console.print(
+                json.dumps({"status": "valid", "config": asdict(config)}, sort_keys=True, indent=2)
+            )
+        else:
+            console.print("Configuration is valid.")
+        return 0
+
+    if args.config_action == "reset":
+        force = bool(getattr(args, "yes", False))
+        if config_path.exists() and not force:
+            console.print(
+                "[yellow]This will replace your persisted config with defaults.[/] Use [yellow]--yes[/] to run without confirmation."
+            )
+            return 2
+        _config_store().save(Config())
+        console.print(
+            f"Config reset to defaults: provider={Config.provider}, model={Config.model or 'default'}, effort={Config.effort}, max_agents={Config.max_agents}, context_budget={Config.context_budget}"
+        )
+        return 0
+
     raise ValueError(f"unknown config action: {args.config_action}")
 
 
@@ -788,9 +821,16 @@ def interactive() -> int:
             if len(parts) == 1 or parts[1] == "show":
                 config_command(argparse.Namespace(config_action="show"))
                 continue
+            if parts[1] == "validate":
+                config_command(argparse.Namespace(config_action="validate", json=False))
+                continue
+            if parts[1] == "reset":
+                yes = "--yes" in parts or "-y" in parts
+                config_command(argparse.Namespace(config_action="reset", yes=yes))
+                continue
             if parts[1] != "set":
                 console.print(
-                    "[yellow]usage: /config show | /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high] [--max-agents <1-8>] [--context-budget <>=1000] [/ ]"
+                    "[yellow]usage: /config show | /config validate | /config reset [--yes] | /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high] [--max-agents <1-8>] [--context-budget <>=1000] [/ ]"
                 )
                 continue
             parsed = argparse.Namespace(
@@ -973,6 +1013,10 @@ def build_parser() -> argparse.ArgumentParser:
     config_set.add_argument("--effort", choices=("low", "medium", "high"))
     config_set.add_argument("--max-agents", type=_parse_max_agents)
     config_set.add_argument("--context-budget", type=_parse_context_budget)
+    config_reset = config_sub.add_parser("reset")
+    config_reset.add_argument("-y", "--yes", action="store_true", help="reset without prompt")
+    config_validate = config_sub.add_parser("validate")
+    config_validate.add_argument("--json", action="store_true", help="output JSON payload")
 
     status_parser = sub.add_parser("status", help="show current CLI status")
     status_parser.add_argument("--json", action="store_true", help="output JSON payload")
