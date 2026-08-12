@@ -17,7 +17,6 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
-from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
@@ -574,12 +573,6 @@ def interactive() -> int:
     history_path = _home() / "history"
     history_path.touch(mode=0o600, exist_ok=True)
     os.chmod(history_path, 0o600)
-    bindings = KeyBindings()
-
-    @bindings.add("escape", "enter")
-    def submit_multiline(event: Any) -> None:
-        event.current_buffer.validate_and_handle()
-
     commands = [
         "/help",
         "/new",
@@ -600,17 +593,12 @@ def interactive() -> int:
     def toolbar() -> str:
         model = config.model or "default"
         state = "active session" if active_session else "new session"
-        return (
-            f" {config.provider} · {model} │ {state} │ "
-            "Enter: newline · Esc+Enter: submit · Ctrl+C: cancel "
-        )
+        return f" {config.provider} · {model} │ {state} │ Enter: submit · Ctrl+C: cancel "
 
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(history_path)),
         auto_suggest=AutoSuggestFromHistory(),
         completer=WordCompleter(commands, sentence=True),
-        multiline=True,
-        key_bindings=bindings,
         bottom_toolbar=toolbar,
     )
     while True:
