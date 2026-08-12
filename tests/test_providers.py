@@ -64,6 +64,33 @@ def test_login_uses_official_interfaces() -> None:
     assert runner.calls == [["codex", "login"], ["claude", "auth", "login"], ["gemini"]]
 
 
+
+
+def test_stream_forwards_requested_effort_to_providers() -> None:
+    class Runner:
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+
+        def run(self, argv: list[str]):
+            raise AssertionError("run should not be used")
+
+        def stream(self, argv: list[str]):
+            self.calls.append(argv)
+            return iter(['{"type":"message","text":"ok"}\n'])
+
+    runner = Runner()
+    providers = [
+        CodexProvider(runner=runner),
+        ClaudeProvider(runner=runner),
+        GeminiProvider(runner=runner),
+    ]
+
+    for provider in providers:
+        list(provider.stream("hello", model="fast", effort="high"))
+
+    assert any('model_reasoning_effort="high"' in " ".join(call) for call in runner.calls)
+    assert any(call[call.index("--effort") + 1] == "high" for call in runner.calls if "--effort" in call)
+
 def test_stream_parses_jsonl_and_builds_provider_argv() -> None:
     class Runner:
         def __init__(self) -> None:
