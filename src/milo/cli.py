@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import asdict, replace
 from importlib import resources
 from pathlib import Path
 from typing import Any, cast
@@ -59,7 +59,7 @@ def _startup_panel(config: Config, cwd: Path) -> Panel:
         _MILO_BANNER
         + f"\n\n[bold]{escape(model)}[/] · {escape(config.provider)}"
         + f"\n[dim]{escape(str(cwd))}[/]"
-        + "\n[dim]Provider-owned authentication · low effort[/]"
+        + f"\n[dim]Provider-owned authentication · {escape(config.effort)} effort[/]"
     )
     right = (
         "[bold]Available Tools[/]\n"
@@ -70,7 +70,7 @@ def _startup_panel(config: Config, cwd: Path) -> Panel:
         + (f", +{len(skill_names) - 8} more" if len(skill_names) > 8 else "")
         + f"\n[dim]{len(skill_names)} validated catalog skills[/]"
         + "\n\n[bold]Session Commands[/]\n"
-        + "/help · /new · /retry · /clear · /status · /sessions · /skills · /memory · /doctor · /update · /exit"
+        + "/help · /new · /retry · /clear · /status · /sessions · /skills · /memory · /doctor · /update · /config · /exit"
     )
     layout = Table.grid(expand=True, padding=(0, 2))
     layout.add_column(ratio=2)
@@ -131,6 +131,7 @@ def _status_payload(config: Config) -> dict[str, object]:
     status: dict[str, object] = {
         "provider": config.provider,
         "model": config.model,
+        "effort": config.effort,
         "version": __version__,
         "home": str(_home()),
         "project": str(Path.cwd().resolve()),
@@ -170,6 +171,7 @@ def _render_status_output(config: Config) -> str:
     return (
         f"Provider: {payload['provider']}\n"
         f"Model: {payload['model'] or 'default'}\n"
+        f"Effort: {payload['effort']}\n"
         f"Version: {payload['version']}\n"
         f"{update_line}\n"
         f"Project: {payload['project']}\n"
@@ -242,7 +244,7 @@ def setup(args: argparse.Namespace) -> int:
             console.print("[red]Authentication could not be verified.[/]")
             return 2
 
-    config = Config(provider=provider_name, model=args.model)
+    config = Config(provider=provider_name, model=args.model, effort=args.effort)
     _config_store().save(config)
     skill_choice = args.skills
     if skill_choice is None and sys.stdin.isatty():
@@ -344,6 +346,91 @@ def update_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def config_command(args: argparse.Namespace) -> int:
+    config_path = _home() / "config.json"
+    if args.config_action == "show":
+        config = _config_store().load() if config_path.exists() else Config()
+        console.print(json.dumps(asdict(config), sort_keys=True, indent=2))
+        return 0
+
+    if args.config_action == "set":
+        config = _config_store().load() if config_path.exists() else Config()
+        updates: dict[str, str] = {}
+        if args.provider is not None:
+            updates["provider"] = args.provider
+        if args.model is not None:
+            updates["model"] = args.model
+        if args.effort is not None:
+            updates["effort"] = args.effort
+
+        if not updates:
+            console.print(
+                "[yellow]Usage: milo config set requires at least one of --provider, --model, --effort[/]"
+            )
+            return 2
+
+        next_provider = updates.get("provider", config.provider)
+        next_model = updates.get("model", config.model)
+        next_effort = updates.get("effort", config.effort)
+
+        next_config = replace(
+            config,
+            provider=next_provider,
+            model=next_model,
+            effort=next_effort,
+        )
+        _config_store().save(next_config)
+        console.print(
+            f"Updated config: provider={next_config.provider}, model={next_config.model or 'default'}, effort={next_config.effort}"
+        )
+        return 0
+
+    raise ValueError(f"unknown config action: {args.config_action}")
+
+
+def code_stats_command(args: argparse.Namespace) -> int:
+    repo_root = Path(__file__).resolve()
+    for candidate in repo_root.parents:
+        if (candidate / "src" / "milo").exists():
+            repo_root = candidate
+            break
+    else:
+        console.print(f"Could not find source root from {__file__}")
+        return 1
+
+    all_python = sorted((repo_root / "src").rglob("*.py"))
+    if args.include_tests:
+        # Include tests at the same nesting level as src when explicitly requested.
+        all_python.extend(sorted((repo_root / "tests").rglob("*.py")))
+        # keep deterministic output when project layout has mixed paths
+        all_python = sorted(set(all_python))
+    else:
+        # default: count only packaged runtime code.
+        all_python = [path for path in all_python if "tests" not in path.parts]
+
+    total_files = len(all_python)
+    total_lines = 0
+    for path in all_python:
+        total_lines += len(path.read_text(encoding="utf-8", errors="ignore").splitlines())
+
+    if args.json:
+        console.print(
+            json.dumps(
+                {
+                    "files": total_files,
+                    "lines": total_lines,
+                    "include_tests": args.include_tests,
+                },
+                sort_keys=True,
+                indent=2,
+            )
+        )
+        return 0
+    console.print(f"python files: {total_files}")
+    console.print(f"lines: {total_lines}")
+    return 0
+
+
 def doctor(_args: argparse.Namespace) -> int:
     table = Table("Check", "Status", "Detail")
     failures = 0
@@ -372,6 +459,7 @@ def chat(args: argparse.Namespace) -> int:
             argparse.Namespace(
                 provider=args.provider,
                 model=args.model,
+                effort=args.effort if hasattr(args, "effort") else None,
                 skills="recommended",
                 non_interactive=not sys.stdin.isatty(),
             )
@@ -383,6 +471,8 @@ def chat(args: argparse.Namespace) -> int:
         config = replace(config, provider=args.provider)
     if args.model:
         config = replace(config, model=args.model)
+    if getattr(args, "effort", None):
+        config = replace(config, effort=args.effort)
     task = " ".join(args.prompt).strip()
     if not task:
         console.print(
@@ -562,7 +652,9 @@ def mcp_command(args: argparse.Namespace) -> int:
 def interactive() -> int:
     if not (_home() / "config.json").exists():
         code = setup(
-            argparse.Namespace(provider=None, model=None, skills=None, non_interactive=False)
+            argparse.Namespace(
+                provider=None, model=None, effort=None, skills=None, non_interactive=False
+            )
         )
         if code:
             return code
@@ -584,6 +676,7 @@ def interactive() -> int:
         "/memory",
         "/doctor",
         "/update",
+        "/config",
         "/exit",
         "/quit",
     ]
@@ -592,8 +685,11 @@ def interactive() -> int:
 
     def toolbar() -> str:
         model = config.model or "default"
+        effort = config.effort or "low"
         state = "active session" if active_session else "new session"
-        return f" {config.provider} · {model} │ {state} │ Enter: submit · Ctrl+C: cancel "
+        return (
+            f" {config.provider} · {model} · {effort} │ {state} │ Enter: submit · Ctrl+C: cancel "
+        )
 
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(history_path)),
@@ -612,7 +708,7 @@ def interactive() -> int:
         if prompt == "/help":
             console.print(
                 Panel.fit(
-                    "[bold]Session[/]  /new /retry /clear /status /sessions\n"
+                    "[bold]Session[/]  /new /retry /clear /status /sessions /config\n"
                     "[bold]Knowledge[/] /skills /memory\n"
                     "[bold]System[/]   /doctor /update /help /exit\n\n"
                     "Complex tasks delegate automatically; provider sessions continue natively.",
@@ -655,6 +751,58 @@ def interactive() -> int:
             continue
         if prompt == "/doctor":
             doctor(argparse.Namespace())
+            continue
+        if prompt.startswith("/config"):
+            parts = prompt.split()
+            if len(parts) == 1 or parts[1] == "show":
+                config_command(argparse.Namespace(config_action="show"))
+                continue
+            if parts[1] != "set":
+                console.print(
+                    "[yellow]usage: /config show | /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high][/ ]"
+                )
+                continue
+            parsed = argparse.Namespace(provider=None, model=None, effort=None)
+            index = 2
+            valid = True
+            while index < len(parts):
+                key = parts[index]
+                if key not in {"--provider", "--model", "--effort"}:
+                    valid = False
+                    break
+                if index + 1 >= len(parts):
+                    valid = False
+                    break
+                value = parts[index + 1]
+                if key == "--provider":
+                    if value not in {"codex", "claude", "gemini"}:
+                        valid = False
+                        break
+                    parsed.provider = value
+                elif key == "--model":
+                    parsed.model = value
+                elif key == "--effort":
+                    if value not in {"low", "medium", "high"}:
+                        valid = False
+                        break
+                    parsed.effort = value
+                index += 2
+            if not valid:
+                console.print(
+                    "[yellow]usage: /config set [--provider codex|claude|gemini] [--model <name>] [--effort low|medium|high][/ ]"
+                )
+                continue
+            if parsed.provider is None and parsed.model is None and parsed.effort is None:
+                console.print("[yellow]use --provider, --model, or --effort with /config set[/]")
+                continue
+            config_command(
+                argparse.Namespace(
+                    config_action="set",
+                    provider=parsed.provider,
+                    model=parsed.model,
+                    effort=parsed.effort,
+                )
+            )
             continue
         if prompt.startswith("/update"):
             parts = prompt.split()
@@ -718,6 +866,11 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser = sub.add_parser("setup", help="configure a provider and skills")
     setup_parser.add_argument("--provider", choices=PROVIDERS)
     setup_parser.add_argument("--model")
+    setup_parser.add_argument(
+        "--effort",
+        choices=("low", "medium", "high"),
+        default="low",
+    )
     setup_parser.add_argument("--skills", choices=("recommended", "all", "none"))
     setup_parser.add_argument("--non-interactive", action="store_true")
 
@@ -744,13 +897,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="override update check interval in seconds",
     )
 
+    config_parser = sub.add_parser("config", help="show and update CLI defaults")
+    config_sub = config_parser.add_subparsers(dest="config_action", required=True)
+    config_sub.add_parser("show")
+    config_set = config_sub.add_parser("set")
+    config_set.add_argument("--provider", choices=PROVIDERS)
+    config_set.add_argument("--model")
+    config_set.add_argument("--effort", choices=("low", "medium", "high"))
+
     status_parser = sub.add_parser("status", help="show current CLI status")
     status_parser.add_argument("--json", action="store_true", help="output JSON payload")
+
+    loc_parser = sub.add_parser("loc", help="count source lines of code")
+    loc_parser.add_argument("--json", action="store_true", help="output JSON payload")
+    loc_parser.add_argument("--include-tests", action="store_true", help="include tests directory")
 
     chat_parser = sub.add_parser("chat", help="run a task")
     chat_parser.add_argument("prompt", nargs="*")
     chat_parser.add_argument("--provider", choices=PROVIDERS)
     chat_parser.add_argument("--model")
+    chat_parser.add_argument(
+        "--effort",
+        choices=("low", "medium", "high"),
+    )
     chat_parser.add_argument("--resume")
     chat_parser.add_argument("--no-delegate", action="store_true")
     chat_parser.add_argument("--show-session", action="store_true")
@@ -833,6 +1002,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "chat": chat,
         "update": update_command,
         "status": status_command,
+        "loc": code_stats_command,
+        "config": config_command,
         "skills": skills_command,
         "memory": memory_command,
         "sessions": sessions_command,

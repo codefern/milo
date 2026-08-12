@@ -101,21 +101,33 @@ class _Provider(ABC):
 
     @abstractmethod
     def invocation(
-        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        session_id: str | None = None,
     ) -> list[str]: ...
 
     def stream(
-        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        session_id: str | None = None,
     ) -> Iterator[dict[str, object]]:
         for line in self._runner.stream(
-            self.invocation(prompt, model=model, session_id=session_id)
+            self.invocation(prompt, model=model, effort=effort, session_id=session_id)
         ):
             if not line.strip():
                 continue
             try:
                 event = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise StreamParseError(f"provider emitted malformed streaming output: {line!r}") from exc
+                raise StreamParseError(
+                    f"provider emitted malformed streaming output: {line!r}"
+                ) from exc
             if not isinstance(event, dict):
                 raise StreamParseError(f"provider streaming event must be an object: {line!r}")
             if event.get("is_error") is True or event.get("type") == "error":
@@ -148,6 +160,7 @@ class CodexProvider(_Provider):
         prompt: str,
         *,
         model: str | None = None,
+        effort: str | None = None,
         session_id: str | None = None,
         skip_git_repo_check: bool,
     ) -> list[str]:
@@ -157,7 +170,7 @@ class CodexProvider(_Provider):
             "untrusted",
             "exec",
             "-c",
-            'model_reasoning_effort="low"',
+            f'model_reasoning_effort="{effort or "low"}"',
             "--sandbox",
             "workspace-write",
         ]
@@ -172,17 +185,28 @@ class CodexProvider(_Provider):
         return argv
 
     def invocation(
-        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        session_id: str | None = None,
     ) -> list[str]:
         return self._build_invocation(
             prompt,
             model=model,
+            effort=effort,
             session_id=session_id,
             skip_git_repo_check=self._skip_git_repo_check,
         )
 
     def stream(
-        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        session_id: str | None = None,
     ) -> Iterator[dict[str, object]]:
         original = self._skip_git_repo_check
         attempts = [False, True] if not original else [True]
@@ -190,7 +214,9 @@ class CodexProvider(_Provider):
             for attempt_skip in attempts:
                 self._skip_git_repo_check = attempt_skip
                 try:
-                    yield from super().stream(prompt, model=model, session_id=session_id)
+                    yield from super().stream(
+                        prompt, model=model, effort=effort, session_id=session_id
+                    )
                     return
                 except StreamParseError as exc:
                     if attempt_skip or not self._is_trusted_directory_error(exc):
@@ -209,14 +235,19 @@ class ClaudeProvider(_Provider):
     login_argv = ("claude", "auth", "login")
 
     def invocation(
-        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        session_id: str | None = None,
     ) -> list[str]:
         argv = [
             "claude",
             "-p",
             prompt,
             "--effort",
-            "low",
+            effort or "low",
             "--permission-mode",
             "default",
             "--output-format",
@@ -262,7 +293,12 @@ class GeminiProvider(_Provider):
             return False
 
     def invocation(
-        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        effort: str | None = None,
+        session_id: str | None = None,
     ) -> list[str]:
         argv = [
             "gemini",

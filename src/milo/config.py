@@ -13,6 +13,7 @@ PROVIDERS = ("codex", "claude", "gemini")
 class Config:
     provider: str = "codex"
     model: str | None = None
+    effort: str = "low"
     max_agents: int = 3
     context_budget: int = 24_000
 
@@ -22,6 +23,8 @@ class Config:
         if not 1 <= self.max_agents <= 8:
             raise ValueError("max_agents must be between 1 and 8")
 
+        if self.effort not in {"low", "medium", "high"}:
+            raise ValueError("effort must be one of: low, medium, high")
         if self.context_budget < 1000:
             raise ValueError("context_budget must be at least 1000")
 

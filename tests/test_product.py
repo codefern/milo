@@ -527,6 +527,47 @@ def test_update_command_can_apply_without_prompt_when_yes_flag_is_set(
     assert cli.update_command(args) == 0
 
 
+def test_loc_command_counts_python_files_and_lines(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("MILO_HOME", str(tmp_path))
+
+    args = Namespace(json=False, include_tests=False)
+    assert cli.code_stats_command(args) == 0
+
+
+def test_loc_parser_supports_json_and_include_tests() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["loc", "--json", "--include-tests"])
+    assert args.json is True
+    assert args.include_tests is True
+
+
+def test_config_set_parser_supports_model_and_effort() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["config", "set", "--provider", "gemini", "--model", "foo", "--effort", "high"]
+    )
+    assert args.config_action == "set"
+    assert args.provider == "gemini"
+    assert args.model == "foo"
+    assert args.effort == "high"
+
+
+def test_config_command_set_updates_defaults(tmp_path, monkeypatch, capsys) -> None:
+    home = tmp_path
+    monkeypatch.setenv("MILO_HOME", str(home))
+    ConfigStore(home / "config.json").save(Config())
+
+    args = Namespace(
+        config_action="set", provider="claude", model="claude-3-7-sonnet", effort="high"
+    )
+    assert cli.config_command(args) == 0
+
+    config = ConfigStore(home / "config.json").load()
+    assert config.provider == "claude"
+    assert config.model == "claude-3-7-sonnet"
+    assert config.effort == "high"
+
+
 def test_setup_parser_and_help_text_mentions_update_and_doctor(capsys) -> None:
     parser = cli.build_parser()
     parser.print_help()
@@ -596,6 +637,7 @@ def test_status_command_json_payload_contract_is_stable(tmp_path, monkeypatch, c
     assert set(output.keys()) == {
         "provider",
         "model",
+        "effort",
         "version",
         "home",
         "project",

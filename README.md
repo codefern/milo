@@ -162,6 +162,40 @@ milo status --json
 
 Status includes provider/model configuration and current cached update state.
 
+## Model and effort controls
+
+Milo is now explicit about provider runtime defaults in both setup and session runtime:
+
+```bash
+milo setup --provider codex --model gpt-5 --effort medium
+milo config set --provider claude --model opus-4
+milo config set --effort high
+milo chat --model gpt-5 --effort medium "Review the design"
+```
+
+Within interactive mode, use:
+
+```text
+/config show
+/config set --provider codex --model gpt-5
+/config set --effort high
+```
+
+The current defaults are available from `milo config show`, and every non-interactive command consumes those defaults unless explicitly overridden.
+
+## Codebase line count
+
+Milo can also report a current Python LOC snapshot:
+
+```bash
+milo loc
+milo loc --json
+milo loc --include-tests
+```
+
+By default, `milo loc` counts non-test Python files in the source package.
+Add `--include-tests` when you want test files included in the same output.
+
 ## Skills
 
 

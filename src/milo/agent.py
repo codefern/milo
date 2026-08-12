@@ -170,7 +170,7 @@ class Agent:
         fallback: list[str] = []
         remote_id = provider_session_id
         for event in provider.stream(
-            augmented, model=self.config.model, session_id=provider_session_id
+            augmented, model=self.config.model, effort=self.config.effort, session_id=provider_session_id
         ):
             remote_id = _provider_session(event) or remote_id
             fallback.extend(_strings(event))
