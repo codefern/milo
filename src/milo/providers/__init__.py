@@ -115,9 +115,9 @@ class _Provider(ABC):
             try:
                 event = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise StreamParseError("provider emitted malformed streaming output") from exc
+                raise StreamParseError(f"provider emitted malformed streaming output: {line!r}") from exc
             if not isinstance(event, dict):
-                raise StreamParseError("provider streaming event must be an object")
+                raise StreamParseError(f"provider streaming event must be an object: {line!r}")
             if event.get("is_error") is True or event.get("type") == "error":
                 detail = event.get("result") or event.get("message") or event.get("error")
                 raise InvocationError(str(detail or "provider reported an error"))
@@ -129,8 +129,27 @@ class CodexProvider(_Provider):
     auth_status_argv = ("codex", "login", "status")
     login_argv = ("codex", "login")
 
-    def invocation(
-        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+    def __init__(
+        self,
+        *,
+        which: Callable[[str], str | None] = shutil.which,
+        runner: Runner | None = None,
+        skip_git_repo_check: bool = False,
+    ) -> None:
+        super().__init__(which=which, runner=runner)
+        self._skip_git_repo_check = skip_git_repo_check
+
+    @staticmethod
+    def _is_trusted_directory_error(error: Exception) -> bool:
+        return "not inside a trusted directory" in str(error).lower()
+
+    def _build_invocation(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        session_id: str | None = None,
+        skip_git_repo_check: bool,
     ) -> list[str]:
         argv = [
             "codex",
@@ -141,8 +160,9 @@ class CodexProvider(_Provider):
             'model_reasoning_effort="low"',
             "--sandbox",
             "workspace-write",
-            "--skip-git-repo-check",
         ]
+        if skip_git_repo_check:
+            argv.append("--skip-git-repo-check")
         if session_id:
             argv.extend(["resume", session_id])
         argv.append("--json")
@@ -150,6 +170,37 @@ class CodexProvider(_Provider):
             argv.extend(["--model", model])
         argv.append(prompt)
         return argv
+
+    def invocation(
+        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+    ) -> list[str]:
+        return self._build_invocation(
+            prompt,
+            model=model,
+            session_id=session_id,
+            skip_git_repo_check=self._skip_git_repo_check,
+        )
+
+    def stream(
+        self, prompt: str, *, model: str | None = None, session_id: str | None = None
+    ) -> Iterator[dict[str, object]]:
+        original = self._skip_git_repo_check
+        attempts = [False, True] if not original else [True]
+        try:
+            for attempt_skip in attempts:
+                self._skip_git_repo_check = attempt_skip
+                try:
+                    yield from super().stream(prompt, model=model, session_id=session_id)
+                    return
+                except StreamParseError as exc:
+                    if attempt_skip or not self._is_trusted_directory_error(exc):
+                        raise
+                except InvocationError as exc:
+                    if attempt_skip or not self._is_trusted_directory_error(exc):
+                        raise
+        finally:
+            self._skip_git_repo_check = original
+        raise StreamParseError("provider emitted malformed streaming output")
 
 
 class ClaudeProvider(_Provider):

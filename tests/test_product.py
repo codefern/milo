@@ -57,7 +57,6 @@ def test_provider_invocations_are_provider_specific() -> None:
         'model_reasoning_effort="low"',
         "--sandbox",
         "workspace-write",
-        "--skip-git-repo-check",
         "resume",
         "s1",
         "--json",

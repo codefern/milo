@@ -4,6 +4,7 @@ from milo.providers import (
     ClaudeProvider,
     CodexProvider,
     GeminiProvider,
+    InvocationError,
     ProviderCapabilities,
 )
 
@@ -97,7 +98,6 @@ def test_stream_parses_jsonl_and_builds_provider_argv() -> None:
             'model_reasoning_effort="low"',
             "--sandbox",
             "workspace-write",
-            "--skip-git-repo-check",
             "resume",
             "abc",
             "--json",
@@ -134,5 +134,123 @@ def test_stream_parses_jsonl_and_builds_provider_argv() -> None:
             "fast",
             "--resume",
             "abc",
+        ],
+    ]
+
+
+def test_codex_retries_with_skip_for_untrusted_directory_error() -> None:
+    class Runner:
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+
+        def run(self, argv: list[str]):
+            raise AssertionError("run should not be used")
+
+        def stream(self, argv: list[str]):
+            self.calls.append(argv)
+            if len(self.calls) == 1:
+                return iter(
+                    ["Not inside a trusted directory and --skip-git-repo-check was not specified\n"]
+                )
+            return iter(['{"type":"message","text":"ok"}\n', "\n"])
+
+    runner = Runner()
+    provider = CodexProvider(runner=runner)
+
+    assert list(provider.stream("hello", model="fast", session_id="abc")) == [
+        {"type": "message", "text": "ok"}
+    ]
+    assert runner.calls == [
+        [
+            "codex",
+            "--ask-for-approval",
+            "untrusted",
+            "exec",
+            "-c",
+            'model_reasoning_effort="low"',
+            "--sandbox",
+            "workspace-write",
+            "resume",
+            "abc",
+            "--json",
+            "--model",
+            "fast",
+            "hello",
+        ],
+        [
+            "codex",
+            "--ask-for-approval",
+            "untrusted",
+            "exec",
+            "-c",
+            'model_reasoning_effort="low"',
+            "--sandbox",
+            "workspace-write",
+            "--skip-git-repo-check",
+            "resume",
+            "abc",
+            "--json",
+            "--model",
+            "fast",
+            "hello",
+        ],
+    ]
+
+
+def test_codex_retries_with_skip_for_untrusted_directory_invocation_error() -> None:
+    class Runner:
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+
+        def run(self, argv: list[str]):
+            raise AssertionError("run should not be used")
+
+        def stream(self, argv: list[str]):
+            self.calls.append(argv)
+            if len(self.calls) == 1:
+                raise InvocationError(
+                    "Not inside a trusted directory and --skip-git-repo-check was not specified."
+                )
+            return iter(['{"type":"message","text":"ok"}\n', "\n"])
+
+    runner = Runner()
+    provider = CodexProvider(runner=runner)
+
+    assert list(provider.stream("hello", model="fast", session_id="abc")) == [
+        {"type": "message", "text": "ok"}
+    ]
+    assert runner.calls == [
+        [
+            "codex",
+            "--ask-for-approval",
+            "untrusted",
+            "exec",
+            "-c",
+            'model_reasoning_effort="low"',
+            "--sandbox",
+            "workspace-write",
+            "resume",
+            "abc",
+            "--json",
+            "--model",
+            "fast",
+            "hello",
+        ],
+        [
+            "codex",
+            "--ask-for-approval",
+            "untrusted",
+            "exec",
+            "-c",
+            'model_reasoning_effort="low"',
+            "--sandbox",
+            "workspace-write",
+            "--skip-git-repo-check",
+            "resume",
+            "abc",
+            "--json",
+            "--model",
+            "fast",
+            "hello",
         ],
     ]
